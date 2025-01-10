@@ -26,7 +26,8 @@
 #include <stdio.h>
 #include "socket.h"
 #include "dhcp.h"
-#include "httpServer.h"
+#include "math.h"
+#include "stdlib.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -47,14 +48,20 @@
 /* Private variables ---------------------------------------------------------*/
 SPI_HandleTypeDef hspi2;
 
-/* USER CODE BEGIN PV */
+TIM_HandleTypeDef htim1;
 
+UART_HandleTypeDef huart2;
+
+/* USER CODE BEGIN PV */
+volatile bool stepperExecuted = false;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_SPI2_Init(void);
+static void MX_TIM1_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -63,119 +70,33 @@ static void MX_SPI2_Init(void);
 /* USER CODE BEGIN 0 */
 #define DHCP_SOCKET     0
 #define DNS_SOCKET      1
-#define HTTP_SOCKET     2
 #define SOCK_TCPS       0
 #define SOCK_UDPS       1
-#define PORT_TCPS       5000
+#define PORT_TCPS       80
 #define PORT_UDPS       3000
-#define MAX_HTTPSOCK    6
-#define index_page "<!DOCTYPE html>"\
-  "<html>"\
-    "<head>"\
-      "<title>W5500-STM32 Web Server</title>"\
-      "<meta http-equiv='Content-Type' content='text/html; charset=utf-8'>"\
-      "<link href=\"data:image/x-icon;base64,A\" rel=\"icon\" type=\"image/x-icon\">"\
-      "<style>"\
-        "html {display: inline-block; margin: 0px auto; text-align: center;}"\
-        "body{margin-top: 50px;}"\
-        ".button {display: block;"\
-          "width: 70px;"\
-          "background-color: #008000;"\
-          "border: none;"\
-          "color: white;"\
-          "padding: 14px 28px;"\
-          "text-decoration: none;"\
-          "font-size: 24px;"\
-          "margin: 0px auto 36px;"\
-          "border-radius: 5px;}"\
-        ".button-on {background-color: #008000;}"\
-        ".button-on:active{background-color: #008000;}"\
-        ".button-off {background-color: #808080;}"\
-        ".button-off:active {background-color: #808080;}"\
-        "p {font-size: 20px;color: #808080;margin-bottom: 20px;}"\
-      "</style>"\
-    "</head>"\
-    "<body>"\
-      "<h1>STM32 - W5500</h1>"\
-      "<p>Control the light via Ethernet</p>"\
-      "<a class=\"button button-on\" href=\"/ledon.html\">ON</a>"\
-      "<a class=\"button button-off\" href=\"/ledoff.html\">OFF</a>"\
-    "</body>"\
-  "</html>"
-
-#define ledon_page "<!DOCTYPE html>"\
-  "<html>"\
-    "<head>"\
-      "<title>W5500-STM32 Web Server</title>"\
-      "<meta http-equiv='Content-Type' content='text/html; charset=utf-8'>"\
-      "<link href=\"data:image/x-icon;base64,A\" rel=\"icon\" type=\"image/x-icon\">"\
-      "<style>"\
-        "html {display: inline-block; margin: 0px auto; text-align: center;}"\
-        "body{margin-top: 50px;}"\
-        ".button {display: block;"\
-          "width: 70px;"\
-          "background-color: #008000;"\
-          "border: none;"\
-          "color: white;"\
-          "padding: 14px 28px;"\
-          "text-decoration: none;"\
-          "font-size: 24px;"\
-          "margin: 0px auto 36px;"\
-          "border-radius: 5px;}"\
-        ".button-on {background-color: #008000;}"\
-        ".button-on:active{background-color: #008000;}"\
-        ".button-off {background-color: #808080;}"\
-        ".button-off:active {background-color: #808080;}"\
-        "p {font-size: 20px;color: #808080;margin-bottom: 20px;}"\
-      "</style>"\
-    "</head>"\
-    "<body>"\
-      "<h1>STM32 - W5500</h1>"\
-      "<p>Light is currently on</p>"\
-      "<a class=\"button button-off\" href=\"/ledoff.html\">OFF</a>"\
-    "</body>"\
-  "</html>"
-
-#define ledoff_page "<!DOCTYPE html>"\
-  "<html>"\
-    "<head>"\
-      "<title>W5500-STM32 Web Server</title>"\
-      "<meta http-equiv='Content-Type' content='text/html; charset=utf-8'>"\
-      "<link href=\"data:image/x-icon;base64,A\" rel=\"icon\" type=\"image/x-icon\">"\
-      "<style>"\
-        "html {display: inline-block; margin: 0px auto; text-align: center;}"\
-        "body{margin-top: 50px;}"\
-        ".button {display: block;"\
-          "width: 70px;"\
-          "background-color: #008000;"\
-          "border: none;"\
-          "color: white;"\
-          "padding: 14px 28px;"\
-          "text-decoration: none;"\
-          "font-size: 24px;"\
-          "margin: 0px auto 36px;"\
-          "border-radius: 5px;}"\
-        ".button-on {background-color: #008000;}"\
-        ".button-on:active{background-color: #008000;}"\
-        ".button-off {background-color: #808080;}"\
-        ".button-off:active {background-color: #808080;}"\
-        "p {font-size: 20px;color: #808080;margin-bottom: 20px;}"\
-      "</style>"\
-    "</head>"\
-    "<body>"\
-      "<h1>STM32 - W5500</h1>"\
-      "<p>Light is currently off</p>"\
-      "<a class=\"button button-on\" href=\"/ledon.html\">ON</a>"\
-    "</body>"\
-  "</html>"
 
 uint8_t socknumlist[] = {2, 3, 4, 5, 6, 7};
 uint8_t RX_BUF[1024];
 uint8_t TX_BUF[1024];
+char tcp_rx_buffer[100]; // Buffer for received TCP data
+char uart_tx_buffer[100]; // Buffer for UART transmission
+char ok[100];
+/*
 wiz_NetInfo net_info = {
     .mac  = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED },
     .dhcp = NETINFO_DHCP
 };
+*/
+
+int flag = 0;
+
+wiz_NetInfo net_info = {
+		.mac = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED },//MSB - LSB
+		.ip ={ 192, 168, 100, 153 },
+		.sn = { 255, 255, 255, 0 },
+		.gw ={ 192, 168, 100, 1 },
+		.dns = { 1, 1, 1, 1 },
+		.dhcp = NETINFO_STATIC };
 
 void wizchipSelect(void) {
     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, GPIO_PIN_RESET);
@@ -207,16 +128,36 @@ volatile bool ip_assigned = false;
 
 void Callback_IPAssigned(void) {
     ip_assigned = true;
+    HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, RESET);
+    starter();
+
 }
 
 void Callback_IPConflict(void) {
     ip_assigned = false;
+
 }
 
 uint8_t dhcp_buffer[1024];
 uint8_t dns_buffer[1024];
 
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
+	if(GPIO_Pin == GPIO_PIN_9) {
+	    flag = 1;
+	  }
+
+}
+
+void delay_us (uint16_t us)
+{
+	__HAL_TIM_SET_COUNTER(&htim1,0);  // set the counter value a 0
+	while (__HAL_TIM_GET_COUNTER(&htim1) < us);  // wait for the counter to reach the us input in the parameter
+}
+
 void W5500Init() {
+	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 1);
+	HAL_Delay(100);
+	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 0);
     // Register W5500 callbacks
     reg_wizchip_cs_cbfunc(wizchipSelect, wizchipUnselect);
     reg_wizchip_spi_cbfunc(wizchipReadByte, wizchipWriteByte);
@@ -235,19 +176,19 @@ void W5500Init() {
         Callback_IPConflict
     );
 
-    uint32_t ctr = 10000;
+    uint32_t ctr = 100;
     while((!ip_assigned) && (ctr > 0)) {
         DHCP_run();
         ctr--;
     }
-    if(!ip_assigned) {
-        return;
+    if(ip_assigned == false) {
+    	NVIC_SystemReset();
     }
-
+/*
     getIPfromDHCP(net_info.ip);
     getGWfromDHCP(net_info.gw);
     getSNfromDHCP(net_info.sn);
-
+*/
 //    char charData[200]; // Data holder
 //    sprintf(charData,"IP:  %d.%d.%d.%d\r\nGW:  %d.%d.%d.%d\r\nNet: %d.%d.%d.%d\r\n",
 //        net_info.ip[0], net_info.ip[1], net_info.ip[2], net_info.ip[3],
@@ -258,6 +199,176 @@ void W5500Init() {
 
     wizchip_setnetinfo(&net_info);
 }
+
+void forward_tcp_to_uart(int socket_fd) {
+    static int current_x = 0; // Cumulative x value, starts at 0
+
+    int16_t received_length = recv(socket_fd, (uint8_t *)tcp_rx_buffer, sizeof(tcp_rx_buffer));
+    if (received_length > 0) {
+        tcp_rx_buffer[received_length] = '\0'; // Null-terminate the string
+
+        // Parse the received string (assumed format: x,y)
+        int x, y;
+        if (sscanf((char*)tcp_rx_buffer, "%d,%d", &x, &y) == 2) {
+            // Convert x and y values
+            x = x / 0.05625;
+            y = y / 0.05625 * 3;
+
+            // Adjust x to ensure it stays within 0-360
+            int new_x = current_x + x;
+            if (new_x > 6400) {
+                x -= (new_x - 6400); // Reduce x to keep total at 360
+            } else if (new_x < 0) {
+                x -= new_x; // Adjust x to keep total at 0
+            }
+
+            // Update the cumulative x value
+            current_x += x;
+            int printedx = x * 0.05625;
+            int printedy = y * 0.05625 / 3;
+
+            // Print the adjusted x value
+            sprintf(uart_tx_buffer, "x: %d\r\ny: %d\r\n", printedx, printedy);
+            HAL_UART_Transmit(&huart2, (uint8_t *)uart_tx_buffer, strlen(uart_tx_buffer), HAL_MAX_DELAY);
+
+            reset_stepper_flag();
+
+            // Execute motor control for x
+            if (x < 0) {
+                Xsteppermotorccw((int)abs(x));
+            } else if (x > 0) {
+                Xsteppermotorcw((int)abs(x));
+            }
+
+            // Process y value
+            if (y < 0) {
+                Ysteppermotorccw((int)abs(y));
+            } else if (y > 0) {
+                Ysteppermotorcw((int)abs(y));
+            }
+
+            if (!stepperExecuted) {
+                stepperExecuted = true; // Mark as executed
+            }
+        } else {
+            // If parsing fails, send an error message
+            sprintf(uart_tx_buffer, "Invalid data format\r\n");
+            HAL_UART_Transmit(&huart2, (uint8_t *)uart_tx_buffer, strlen(uart_tx_buffer), HAL_MAX_DELAY);
+        }
+        sprintf(ok, "Ready to excecute next command\n\r");
+        HAL_UART_Transmit(&huart2, (uint8_t *)ok, strlen(ok), HAL_MAX_DELAY);
+    }
+}
+
+
+
+// Main loop to process TCP and forward data
+void process_tcp_server(int socket_fd) {
+	 while (1) {
+	        // Check for any new connections or data
+	        if (getSn_SR(socket_fd) == SOCK_ESTABLISHED) {
+	            forward_tcp_to_uart(socket_fd);
+	        } else if (getSn_SR(socket_fd) == SOCK_CLOSE_WAIT) {
+	            disconnect(socket_fd);
+	            close(socket_fd);
+	            break;
+	        }
+	    }
+}
+void reset_stepper_flag(void) {
+    stepperExecuted = false;
+}
+
+void starter (void){
+
+	for (int i=0; i<6400; i++)
+	   {
+		 HAL_GPIO_WritePin (DIR2_GPIO_Port, DIR2_Pin, RESET);
+	     HAL_GPIO_WritePin (ENA2_GPIO_Port, ENA2_Pin, SET);
+	     HAL_GPIO_WritePin (PUL2_GPIO_Port, PUL2_Pin, SET);
+	     delay_us(150);
+	     HAL_GPIO_WritePin (PUL2_GPIO_Port, PUL2_Pin, RESET);
+	     HAL_GPIO_WritePin (ENA2_GPIO_Port, ENA2_Pin, RESET);
+	     delay_us(150);
+	}
+
+
+	for (int i=0; i<6400; i++)
+	   {
+		 HAL_GPIO_WritePin (DIR1_GPIO_Port, DIR1_Pin, RESET);
+	     HAL_GPIO_WritePin (ENA1_GPIO_Port, ENA1_Pin, SET);
+	     HAL_GPIO_WritePin (PUL1_GPIO_Port, PUL1_Pin, SET);
+	     delay_us(300);
+	     HAL_GPIO_WritePin (PUL1_GPIO_Port, PUL1_Pin, RESET);
+	     HAL_GPIO_WritePin (ENA1_GPIO_Port, ENA1_Pin, RESET);
+	     delay_us(300);
+			if (flag == 1){
+				flag = 0;
+				break;
+			}
+	}
+
+
+}
+
+void Xsteppermotorcw(x){
+
+	for (int i=0; i<x; i++)
+	   {
+		 HAL_GPIO_WritePin (DIR1_GPIO_Port, DIR1_Pin, SET);
+	     HAL_GPIO_WritePin (ENA1_GPIO_Port, ENA1_Pin, SET);
+	     HAL_GPIO_WritePin (PUL1_GPIO_Port, PUL1_Pin, SET);
+	     delay_us(300);
+	     HAL_GPIO_WritePin (PUL1_GPIO_Port, PUL1_Pin, RESET);
+	     HAL_GPIO_WritePin (ENA1_GPIO_Port, ENA1_Pin, RESET);
+	     delay_us(300);
+			}
+	}
+
+
+void Ysteppermotorcw(y){
+
+	for (int i=0; i<y; i++)
+	   {
+		 HAL_GPIO_WritePin (DIR2_GPIO_Port, DIR2_Pin, SET);
+	     HAL_GPIO_WritePin (ENA2_GPIO_Port, ENA2_Pin, SET);
+	     HAL_GPIO_WritePin (PUL2_GPIO_Port, PUL2_Pin, SET);
+	     delay_us(150);
+	     HAL_GPIO_WritePin (PUL2_GPIO_Port, PUL2_Pin, RESET);
+	     HAL_GPIO_WritePin (ENA2_GPIO_Port, ENA2_Pin, RESET);
+	     delay_us(150);
+	}
+
+}
+
+void Xsteppermotorccw(x){
+
+	for (int i=0; i<x; i++)
+	   {
+		 HAL_GPIO_WritePin (DIR1_GPIO_Port, DIR1_Pin, RESET);
+	     HAL_GPIO_WritePin (ENA1_GPIO_Port, ENA1_Pin, SET);
+	     HAL_GPIO_WritePin (PUL1_GPIO_Port, PUL1_Pin, SET);
+	     delay_us(300);
+	     HAL_GPIO_WritePin (PUL1_GPIO_Port, PUL1_Pin, RESET);
+	     HAL_GPIO_WritePin (ENA1_GPIO_Port, ENA1_Pin, RESET);
+	     delay_us(300);
+	}
+}
+
+void Ysteppermotorccw(y){
+	for (int i=0; i<y; i++)
+	   {
+		 HAL_GPIO_WritePin (DIR2_GPIO_Port, DIR2_Pin, RESET);
+	     HAL_GPIO_WritePin (ENA2_GPIO_Port, ENA2_Pin, SET);
+	     HAL_GPIO_WritePin (PUL2_GPIO_Port, PUL2_Pin, SET);
+	     delay_us(150);
+	     HAL_GPIO_WritePin (PUL2_GPIO_Port, PUL2_Pin, RESET);
+	     HAL_GPIO_WritePin (ENA2_GPIO_Port, ENA2_Pin, RESET);
+	     delay_us(150);
+	}
+
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -290,16 +401,11 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_SPI2_Init();
+  MX_TIM1_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-  	W5500Init();
-    httpServer_init(TX_BUF, RX_BUF, MAX_HTTPSOCK, socknumlist);
-    reg_httpServer_cbfunc(NVIC_SystemReset, NULL);
-    /* Web content registration */
-    reg_httpServer_webContent((uint8_t *)"index.html", (uint8_t *)index_page);
-    reg_httpServer_webContent((uint8_t *)"ledon.html", (uint8_t *)ledon_page);
-    reg_httpServer_webContent((uint8_t *)"ledoff.html", (uint8_t *)ledoff_page);
-
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+  HAL_TIM_Base_Start(&htim1);
+  W5500Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -307,8 +413,13 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-	  for(int i = 0; i < MAX_HTTPSOCK; i++) httpServer_run(i); // HTTP Server handler
+
     /* USER CODE BEGIN 3 */
+	    int socket_fd = socket(SOCK_TCPS, Sn_MR_TCP, PORT_TCPS, 0);
+	    if (socket_fd >= 0 && listen(socket_fd) == SOCK_OK) {
+	        process_tcp_server(socket_fd);  // Process incoming TCP connections
+	        close(socket_fd);              // Close socket when done
+	    }
   }
   /* USER CODE END 3 */
 }
@@ -383,7 +494,7 @@ static void MX_SPI2_Init(void)
   hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi2.Init.NSS = SPI_NSS_SOFT;
-  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_256;
   hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -395,6 +506,85 @@ static void MX_SPI2_Init(void)
   /* USER CODE BEGIN SPI2_Init 2 */
 
   /* USER CODE END SPI2_Init 2 */
+
+}
+
+/**
+  * @brief TIM1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM1_Init(void)
+{
+
+  /* USER CODE BEGIN TIM1_Init 0 */
+
+  /* USER CODE END TIM1_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM1_Init 1 */
+
+  /* USER CODE END TIM1_Init 1 */
+  htim1.Instance = TIM1;
+  htim1.Init.Prescaler = 72-1;
+  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim1.Init.Period = 0xffff-1;
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim1.Init.RepetitionCounter = 0;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM1_Init 2 */
+
+  /* USER CODE END TIM1_Init 2 */
+
+}
+
+/**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART2_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
 
 }
 
@@ -416,10 +606,11 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, LD2_Pin|PUL2_Pin|ENA2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, DIR1_Pin|ENA1_Pin|PUL1_Pin|CS_Pin
+                          |DIR2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
@@ -427,19 +618,31 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : LD2_Pin */
-  GPIO_InitStruct.Pin = LD2_Pin;
+  /*Configure GPIO pins : LD2_Pin PUL2_Pin ENA2_Pin */
+  GPIO_InitStruct.Pin = LD2_Pin|PUL2_Pin|ENA2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PB4 */
-  GPIO_InitStruct.Pin = GPIO_PIN_4;
+  /*Configure GPIO pins : DIR1_Pin ENA1_Pin PUL1_Pin CS_Pin
+                           DIR2_Pin */
+  GPIO_InitStruct.Pin = DIR1_Pin|ENA1_Pin|PUL1_Pin|CS_Pin
+                          |DIR2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : Proximity_Pin */
+  GPIO_InitStruct.Pin = Proximity_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(Proximity_GPIO_Port, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */

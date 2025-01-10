@@ -61,12 +61,29 @@ void Error_Handler(void);
 #define B1_GPIO_Port GPIOC
 #define LD2_Pin GPIO_PIN_5
 #define LD2_GPIO_Port GPIOA
+#define PUL2_Pin GPIO_PIN_6
+#define PUL2_GPIO_Port GPIOA
+#define ENA2_Pin GPIO_PIN_7
+#define ENA2_GPIO_Port GPIOA
+#define DIR1_Pin GPIO_PIN_13
+#define DIR1_GPIO_Port GPIOB
+#define ENA1_Pin GPIO_PIN_14
+#define ENA1_GPIO_Port GPIOB
+#define PUL1_Pin GPIO_PIN_15
+#define PUL1_GPIO_Port GPIOB
 #define TMS_Pin GPIO_PIN_13
 #define TMS_GPIO_Port GPIOA
 #define TCK_Pin GPIO_PIN_14
 #define TCK_GPIO_Port GPIOA
 #define SWO_Pin GPIO_PIN_3
 #define SWO_GPIO_Port GPIOB
+#define CS_Pin GPIO_PIN_4
+#define CS_GPIO_Port GPIOB
+#define DIR2_Pin GPIO_PIN_6
+#define DIR2_GPIO_Port GPIOB
+#define Proximity_Pin GPIO_PIN_9
+#define Proximity_GPIO_Port GPIOB
+#define Proximity_EXTI_IRQn EXTI9_5_IRQn
 
 /* USER CODE BEGIN Private defines */
 
